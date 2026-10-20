@@ -7,3 +7,6 @@ android/
 ios/
 coverage/
 *.bundle
+
+# 별도 Node 도구 (자체 테스트는 node --test)
+automation/

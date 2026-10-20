@@ -1,0 +1,16 @@
+{
+  "name": "affiliate-shorts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "쿠팡 파트너스 상품으로 쇼츠·릴스·틱톡 콘텐츠 패키지를 만드는 파이프라인",
+  "type": "module",
+  "bin": { "shorts": "src/cli.mjs" },
+  "scripts": {
+    "shorts": "node --env-file-if-exists=.env src/cli.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "engines": { "node": ">=20.12" },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.135.0"
+  }
+}
