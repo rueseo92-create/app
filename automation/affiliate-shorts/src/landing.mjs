@@ -3,19 +3,32 @@
 const esc = s =>
   String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
+// 수동 make 로 만든 항목은 상품 하나짜리라 같은 모양으로 맞춘다
+const productsOf = it => it.products ?? [{ name: it.name, image: it.image, link: it.link }];
+
 export function buildLanding(items, { title = '영상 속 그 제품', disclosure }) {
   const sorted = [...items].sort((a, b) => b.slot - a.slot);
-  const cards = sorted
-    .map(
-      it => `
-    <li id="n${it.slot}">
-      <a href="${esc(it.link)}" rel="sponsored noopener" target="_blank">
-        <span class="no">${it.slot}</span>
-        <img src="${esc(it.image)}" alt="" loading="lazy" referrerpolicy="no-referrer">
-        <span class="name">${esc(it.name)}</span>
-      </a>
-    </li>`,
-    )
+  const groups = sorted
+    .map(it => {
+      const products = productsOf(it);
+      const rows = products
+        .map(
+          (p, i) => `
+        <li>
+          <a href="${esc(p.link)}" rel="sponsored noopener" target="_blank">
+            <img src="${esc(p.image)}" alt="" loading="lazy" referrerpolicy="no-referrer">
+            <span class="name">${products.length > 1 ? `<b>${i + 1}</b> ` : ''}${esc(p.name)}</span>
+          </a>
+        </li>`,
+        )
+        .join('');
+      return `
+    <section id="n${it.slot}">
+      <h2><span class="no">${it.slot}</span>${esc(it.title ?? it.keyword ?? '')}</h2>
+      <ul>${rows}
+      </ul>
+    </section>`;
+    })
     .join('');
 
   return `<!doctype html>
@@ -36,12 +49,15 @@ export function buildLanding(items, { title = '영상 속 그 제품', disclosur
   form { display:flex; gap:8px; margin:12px 0 20px; }
   input { flex:1; min-width:0; font:inherit; padding:12px; border-radius:12px; border:1px solid var(--line); background:var(--card); color:var(--fg); }
   button { font:inherit; padding:12px 16px; border-radius:12px; border:0; background:var(--accent); color:#fff; }
-  ul { list-style:none; margin:0; padding:0; display:grid; gap:10px; }
-  li a { display:grid; grid-template-columns:44px 64px 1fr; align-items:center; gap:12px; padding:10px; background:var(--card); border:1px solid var(--line); border-radius:14px; color:inherit; text-decoration:none; }
-  li:target a { outline:2px solid var(--accent); }
-  .no { font-weight:700; font-size:20px; text-align:center; }
+  section { margin:0 0 18px; scroll-margin-top:12px; }
+  section:target h2 .no { background:var(--accent); color:#fff; }
+  h2 { display:flex; align-items:center; gap:10px; font-size:16px; margin:0 0 8px; }
+  .no { min-width:36px; height:36px; padding:0 8px; border-radius:18px; display:inline-grid; place-items:center; background:var(--card); border:1px solid var(--line); font-size:16px; }
+  ul { list-style:none; margin:0; padding:0; display:grid; gap:8px; }
+  li a { display:grid; grid-template-columns:64px 1fr; align-items:center; gap:12px; padding:10px; background:var(--card); border:1px solid var(--line); border-radius:14px; color:inherit; text-decoration:none; }
   img { width:64px; height:64px; object-fit:cover; border-radius:10px; background:var(--line); }
   .name { font-size:15px; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+  .name b { color:var(--accent); }
 </style>
 </head>
 <body>
@@ -51,9 +67,7 @@ export function buildLanding(items, { title = '영상 속 그 제품', disclosur
   <form onsubmit="event.preventDefault(); location.hash = 'n' + this.q.value.trim();">
     <input name="q" inputmode="numeric" placeholder="영상에서 본 번호">
     <button>찾기</button>
-  </form>
-  <ul>${cards}
-  </ul>
+  </form>${groups}
 </main>
 </body>
 </html>

@@ -5,17 +5,24 @@
 //   render  <번호> --media <폴더>    직접 찍은 소재로 세로 영상 만들기
 //   landing                          프로필 링크 페이지 만들기
 //   list                             만든 패키지 목록
+//   auto                             하루 한 편 자동 제작 (키워드 → 상품 3개 → 대본 → 음성 → 영상)
+//   week                             쌓인 영상의 주간 예약 체크리스트 만들기
+//   done <번호...>                   예약 끝난 영상 표시
 import fs from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
+import { spawnSync } from 'node:child_process';
 import { createCoupangClient } from './coupang.mjs';
 import { generatePlan, templatePlan } from './plan.mjs';
 import { review, DISCLOSURE } from './compliance.mjs';
 import { render } from './render.mjs';
 import { buildLanding } from './landing.mjs';
+import { runAuto } from './auto.mjs';
+import { buildWeek } from './week.mjs';
 
 const OUT = path.resolve('out');
-const INDEX = path.join(OUT, 'index.json');
+// 제작 이력은 저장소에 커밋해 다음 실행이 이어받는다
+const INDEX = path.resolve('state/index.json');
 
 const MOCK_PRODUCT = {
   id: '0',
@@ -42,14 +49,30 @@ const [cmd, ...rest] = positionals;
 
 const readIndex = () => (fs.existsSync(INDEX) ? JSON.parse(fs.readFileSync(INDEX, 'utf8')) : []);
 const writeIndex = items => {
-  fs.mkdirSync(OUT, { recursive: true });
-  fs.writeFileSync(INDEX, JSON.stringify(items, null, 2));
+  fs.mkdirSync(path.dirname(INDEX), { recursive: true });
+  fs.writeFileSync(INDEX, JSON.stringify(items, null, 2) + '\n');
 };
 const won = n => `${Number(n).toLocaleString('ko-KR')}원`;
 
 async function search(keyword) {
-  if (opt.mock) return [MOCK_PRODUCT];
+  if (opt.mock) return mockProducts(keyword);
   return createCoupangClient().searchProducts(keyword, Number(opt.limit));
+}
+
+// 키 없이 흐름을 시험할 때 쓰는 가짜 상품. 이미지는 ffmpeg 로 만든다
+function mockProducts(keyword) {
+  const dir = path.join(OUT, 'mock');
+  fs.mkdirSync(dir, { recursive: true });
+  const ids = readIndex().flatMap(it => (it.products ?? []).map(p => Number(p.id)));
+  const base = Math.max(0, ...ids);
+  return ['orange', 'teal', 'plum', 'gold'].map((color, i) => {
+    const id = String(base + i + 1);
+    const image = path.join(dir, `${id}.png`);
+    if (!fs.existsSync(image)) {
+      spawnSync('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'lavfi', '-i', `color=c=${color}:size=800x800`, '-frames:v', '1', image]);
+    }
+    return { ...MOCK_PRODUCT, id, name: `[예시] ${keyword} ${i + 1}호`, price: 9900 + i * 5000, image };
+  });
 }
 
 const commands = {
@@ -108,11 +131,56 @@ const commands = {
     if (!items.length) throw new Error('아직 만든 패키지가 없습니다.');
     fs.mkdirSync('site', { recursive: true });
     fs.writeFileSync('site/index.html', buildLanding(items, { title: process.env.LANDING_TITLE, disclosure: DISCLOSURE }));
-    console.log(`✔ site/index.html (${items.length}개 상품). 이 폴더를 배포하고 주소를 프로필 링크에 넣으세요.`);
+    console.log(`✔ site/index.html (${items.length}편). 이 폴더를 배포하고 주소를 프로필 링크에 넣으세요.`);
+  },
+
+  async auto() {
+    const items = readIndex();
+    const { item, plan } = await runAuto({
+      search,
+      outDir: OUT,
+      items,
+      keywordsFile: path.resolve('keywords.txt'),
+      dryRun: opt['dry-run'],
+      font: process.env.SUBTITLE_FONT,
+    });
+    fs.writeFileSync(path.join(OUT, String(item.slot), 'captions.txt'), captionsText(plan));
+    items.push(item);
+    writeIndex(items);
+    await commands.landing();
+    console.log(`✔ ${item.slot}번 영상 준비 완료. 주 1회 \`week\` 로 예약 목록을 만드세요.`);
+  },
+
+  async week() {
+    const items = readIndex();
+    const ready = items.filter(it => it.status === 'ready');
+    if (!ready.length) return console.log('예약할 새 영상이 없습니다.');
+    const captions = Object.fromEntries(
+      ready.map(it => [it.slot, fs.readFileSync(path.join(OUT, String(it.slot), 'captions.txt'), 'utf8')]),
+    );
+    const md = buildWeek(ready, {
+      captions,
+      videoPath: slot => path.join(OUT, String(slot), 'video.mp4'),
+      time: process.env.POST_TIME || '19:00',
+      platforms: (process.env.POST_PLATFORMS || 'youtube').split(',').map(s => s.trim()),
+    });
+    fs.writeFileSync(path.join(OUT, 'week.md'), md);
+    console.log(`✔ ${path.join(OUT, 'week.md')} (${ready.length}편). 맨 위 지시문을 Chrome의 Claude에게 붙여 넣으세요.`);
+  },
+
+  async done() {
+    const slots = rest.map(Number).filter(Boolean);
+    if (!slots.length) throw new Error('예) shorts done 3 4 5');
+    const items = readIndex();
+    for (const it of items) if (slots.includes(it.slot)) it.status = 'scheduled';
+    writeIndex(items);
+    console.log(`✔ 예약 완료로 표시: ${slots.join(', ')}`);
   },
 
   async list() {
-    for (const it of readIndex()) console.log(`${String(it.slot).padStart(3)}. [${it.status}] ${it.name}`);
+    for (const it of readIndex()) {
+      console.log(`${String(it.slot).padStart(3)}. [${it.status}] ${it.title ?? it.name}`);
+    }
   },
 };
 
@@ -152,7 +220,7 @@ function shotlistText(product, plan, issues) {
 
 const run = commands[cmd];
 if (!run) {
-  console.log(fs.readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1, 8).join('\n').replace(/^\/\/ ?/gm, ''));
+  console.log(fs.readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1, 10).join('\n').replace(/^\/\/ ?/gm, ''));
   process.exit(cmd ? 1 : 0);
 }
 run().catch(err => {
