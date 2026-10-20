@@ -8,6 +8,8 @@
 //   auto                             하루 한 편 자동 제작 (키워드 → 상품 3개 → 대본 → 음성 → 영상)
 //   week                             쌓인 영상의 주간 예약 체크리스트 만들기
 //   done <번호...>                   예약 끝난 영상 표시
+//   threads-login                    Threads 계정 연결 (처음 한 번)
+//   threads                          스레드 글 하나 자동 작성·게시 (+첫 댓글 링크)
 import fs from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
@@ -17,8 +19,11 @@ import { generatePlan, templatePlan } from './plan.mjs';
 import { review, DISCLOSURE } from './compliance.mjs';
 import { render } from './render.mjs';
 import { buildLanding } from './landing.mjs';
-import { runAuto } from './auto.mjs';
+import { runAuto, readKeywords } from './auto.mjs';
 import { buildWeek } from './week.mjs';
+import { authorizeUrl, extractCode, login, freshToken, postWithLinkReply } from './threads.mjs';
+import { runThreads } from './threadsPost.mjs';
+import { createInterface } from 'node:readline/promises';
 
 const OUT = path.resolve('out');
 // 제작 이력은 저장소에 커밋해 다음 실행이 이어받는다
@@ -177,6 +182,42 @@ const commands = {
     console.log(`✔ 예약 완료로 표시: ${slots.join(', ')}`);
   },
 
+  async 'threads-login'() {
+    const appId = process.env.THREADS_APP_ID;
+    const appSecret = process.env.THREADS_APP_SECRET;
+    const redirectUri = process.env.THREADS_REDIRECT_URI || 'https://localhost/';
+    if (!appId || !appSecret) throw new Error('.env 에 THREADS_APP_ID, THREADS_APP_SECRET 을 넣으세요.');
+    console.log('1) 아래 주소를 브라우저에서 열고 "허용"을 누르세요.\n');
+    console.log(authorizeUrl({ appId, redirectUri }));
+    console.log('\n2) 이동한 페이지가 열리지 않아도 괜찮습니다. 주소창의 주소 전체를 복사하세요.');
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    const pasted = await rl.question('\n주소 붙여 넣기: ');
+    rl.close();
+    const token = await login({ appId, appSecret, redirectUri, code: extractCode(pasted) });
+    console.log(`✔ 연결됨 (만료 ${token.expiresAt.slice(0, 10)}, 실행될 때마다 자동 갱신)`);
+  },
+
+  async threads() {
+    const historyFile = path.resolve('state/threads.json');
+    const history = fs.existsSync(historyFile) ? JSON.parse(fs.readFileSync(historyFile, 'utf8')) : [];
+    const dryRun = opt['dry-run'];
+    const token = dryRun ? null : await freshToken();
+    const entry = await runThreads({
+      search,
+      keywords: readKeywords(path.resolve('keywords.txt')),
+      history,
+      dryRun,
+      maxPerDay: Number(process.env.THREADS_MAX_PER_DAY || 3),
+      persona: process.env.PERSONA,
+      post: draft => postWithLinkReply(token, draft),
+    });
+    if (entry && !dryRun) {
+      history.push(entry);
+      fs.mkdirSync(path.dirname(historyFile), { recursive: true });
+      fs.writeFileSync(historyFile, JSON.stringify(history, null, 2) + '\n');
+    }
+  },
+
   async list() {
     for (const it of readIndex()) {
       console.log(`${String(it.slot).padStart(3)}. [${it.status}] ${it.title ?? it.name}`);
@@ -220,7 +261,7 @@ function shotlistText(product, plan, issues) {
 
 const run = commands[cmd];
 if (!run) {
-  console.log(fs.readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1, 10).join('\n').replace(/^\/\/ ?/gm, ''));
+  console.log(fs.readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1, 12).join('\n').replace(/^\/\/ ?/gm, ''));
   process.exit(cmd ? 1 : 0);
 }
 run().catch(err => {

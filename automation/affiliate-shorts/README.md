@@ -1,6 +1,6 @@
-# 쿠팡 파트너스 쇼츠 자동화
+# 쿠팡 파트너스 자동화 (스레드 · 쇼츠)
 
-**영상 제작은 매일 자동으로 하고, 사람은 주 1회 10분만 씁니다.** 꾸준함이 필요한 부분은 전부 기계가 맡습니다.
+**스레드는 완전 자동으로 게시하고, 쇼츠 영상은 매일 자동으로 만들어 두면 사람은 주 1회 10분만 씁니다.** 꾸준함이 필요한 부분은 전부 기계가 맡습니다.
 
 ```
 [매일, 자동]  키워드 → 쿠팡 상품 검색 → Claude가 3개 골라 대본 → AI 음성 → 세로 영상 + 캡션
@@ -29,6 +29,35 @@ npm run shorts -- auto --mock --dry-run   # 키 없이 연습: out/1/video.mp4 �
 - **프로필 링크 페이지**는 `site/index.html`입니다. Netlify Drop(app.netlify.com/drop)에 `site` 폴더를 끌어다 놓으면 주소가 생깁니다. 그 주소를 유튜브·인스타·틱톡 프로필 링크에 넣으세요.
 - 쿠팡 파트너스 API 키는 **최종 승인된 계정**만 받을 수 있습니다. 승인 전에는 `--mock`으로 연습하세요.
 
+## 스레드 완전 자동 게시
+
+스레드는 Meta가 공식 게시 API를 열어 두어서 **사람 손 없이 매일 자동으로** 올릴 수 있습니다. 위장이나 우회가 필요 없습니다.
+
+```
+[하루 3번, 자동]  키워드 → 쿠팡 검색 → Claude가 하나 골라 글 작성(PERSONA 말투)
+                 → 점검(대가성 문구·써 본 척·단정 표현·500자) → 상품 사진과 함께 게시
+                 → 첫 댓글에 파트너스 링크
+```
+
+처음 한 번만 연결하면 됩니다(20분).
+
+1. developers.facebook.com → 앱 만들기 → 사용 사례 **"Threads API 액세스"** 선택
+2. 사용 사례 설정에서 권한 `threads_basic`, `threads_content_publish`, `threads_manage_replies` 추가
+3. 설정에서 **리디렉션 콜백 URL**에 `https://localhost/` 등록
+4. 앱 역할 → **Threads 테스터**에 내 스레드 계정 추가 → 스레드 웹(threads.com) 설정 → 계정 → 웹사이트 권한 → 초대 수락
+5. App ID / App Secret을 `.env`에 넣고:
+   ```bash
+   npm run shorts -- threads --mock --dry-run   # 글 미리보기 (게시 안 함)
+   npm run shorts -- threads-login              # 브라우저에서 허용 → 주소창 주소 붙여 넣기
+   npm run shorts -- threads                    # 첫 글 직접 올려 보기
+   ./install-threads.sh                         # 매일 09:40 13:10 20:20 자동 게시
+   ```
+
+- 내 계정에 올리는 것은 테스터 권한으로 됩니다. 메타 앱 검수는 다른 사람 계정에 올리는 서비스를 만들 때만 필요합니다.
+- 토큰은 60일짜리이고, 실행될 때마다 알아서 갱신합니다. **맥이 60일 넘게 한 번도 실행하지 않으면** `threads-login`을 다시 해야 합니다.
+- 글 점검에 두 번 걸리면 그 회차는 올리지 않고 `out/threads.log`에 사유를 남깁니다. 같은 상품은 두 번 올리지 않습니다.
+- 말투는 `.env`의 `PERSONA` 한 줄로 바꿉니다. 콘셉트는 자유지만, 자동으로 쓰는 글이라 "써 봤다"는 표현은 막혀 있습니다.
+
 ## 명령어
 
 | 명령 | 하는 일 |
@@ -36,6 +65,8 @@ npm run shorts -- auto --mock --dry-run   # 키 없이 연습: out/1/video.mp4 �
 | `auto` | 하루 한 편 자동 제작 (LaunchAgent가 매일 실행) |
 | `week` | 쌓인 영상의 주간 예약 체크리스트 `out/week.md` |
 | `done 3 4 5` | 예약 끝난 영상 표시 |
+| `threads-login` | Threads 계정 연결 (처음 한 번) |
+| `threads` | 스레드 글 하나 자동 작성·게시 (`--dry-run`이면 미리보기만) |
 | `list` | 전체 목록과 상태 |
 | `search 키워드` / `make 키워드 --pick N` / `render N --media 폴더` | 직접 촬영해 만드는 수동 모드 |
 
