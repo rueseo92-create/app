@@ -34,15 +34,24 @@ npm run shorts -- auto --mock --dry-run   # 키 없이 연습: out/1/video.mp4 �
 스레드는 Meta가 공식 게시 API를 열어 두어서 **사람 손 없이 매일 자동으로** 올릴 수 있습니다. 위장이나 우회가 필요 없습니다.
 
 ```
-[하루 3번, 자동]  키워드 → 쿠팡 검색 → Claude가 하나 골라 글 작성(PERSONA 말투)
-                 → 점검(대가성 문구·써 본 척·단정 표현·500자) → 상품 사진과 함께 게시
-                 → 첫 댓글에 파트너스 링크
+[하루 3번, 자동]  글 종류 고르기 → Claude가 PERSONA 말투로 작성 → 점검 → 게시
+  · 살림 팁 글(링크 없음)      15
+  · 참여 질문 글(링크 없음)     5     ← 30개 기준 비율, 수익화 글은 연달아 두지 않음
+  · 수익화 글(첫 댓글 링크)    10
 ```
+
+**수익화 글은 "물건이 아니라 상황"을 씁니다.** 4칸 구조(상황 훅 → 디테일 → 반전 → 질문), 7줄 이내로 씁니다. 본문에는 제품명을 넣지 않고, "정확히 뭔지는 첫 댓글에"로 끝냅니다. 첫 줄 유형(자책형, 일상 짜증형, 질문형, 상식 반박형, 부정 명령형)은 돌아가며 씁니다.
+
+**초기 계정 보호:** 첫 7일은 링크 글 없이 팁·질문 글만 올리고(`THREADS_LINK_AFTER_DAYS`), 14일까지는 하루 2개까지만 올립니다.
+
+**성과 반영:** 게시 1~7일 뒤 조회수·좋아요·댓글을 자동으로 모읍니다. 반응 좋았던 첫 줄은 다음 글을 쓸 때 "구조만" 참고시킵니다. `npm run shorts -- threads-stats`로 글 종류별, 첫 줄 유형별 평균 조회수를 볼 수 있습니다.
+
+**하지 않는 것:** 겪지 않은 일상을 지어내기, 써 본 척·사 본 척("샀다가 후회"), 터진 글을 문장만 바꿔 다시 올리기, 봇처럼 안 보이게 꾸미기. 계정 정지와 기만 광고 위험이 수익보다 큽니다.
 
 처음 한 번만 연결하면 됩니다(20분).
 
 1. developers.facebook.com → 앱 만들기 → 사용 사례 **"Threads API 액세스"** 선택
-2. 사용 사례 설정에서 권한 `threads_basic`, `threads_content_publish`, `threads_manage_replies` 추가
+2. 사용 사례 설정에서 권한 `threads_basic`, `threads_content_publish`, `threads_manage_replies`, `threads_manage_insights` 추가
 3. 설정에서 **리디렉션 콜백 URL**에 `https://localhost/` 등록
 4. 앱 역할 → **Threads 테스터**에 내 스레드 계정 추가 → 스레드 웹(threads.com) 설정 → 계정 → 웹사이트 권한 → 초대 수락
 5. App ID / App Secret을 `.env`에 넣고:
@@ -67,6 +76,7 @@ npm run shorts -- auto --mock --dry-run   # 키 없이 연습: out/1/video.mp4 �
 | `done 3 4 5` | 예약 끝난 영상 표시 |
 | `threads-login` | Threads 계정 연결 (처음 한 번) |
 | `threads` | 스레드 글 하나 자동 작성·게시 (`--dry-run`이면 미리보기만) |
+| `threads-stats` | 스레드 성과 요약 |
 | `list` | 전체 목록과 상태 |
 | `search 키워드` / `make 키워드 --pick N` / `render N --media 폴더` | 직접 촬영해 만드는 수동 모드 |
 

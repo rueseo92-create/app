@@ -40,7 +40,7 @@ export function review(plan) {
 }
 
 // 자동으로 쓰는 글은 써 보지 않은 제품이다. 써 본 척하는 표현은 기만 광고가 된다.
-const FAKE_EXPERIENCE = ['내돈내산', '써 봤', '써봤', '써 보니', '써보니', '제가 쓰는', '내가 쓰는', '직접 써', '사용해 보니', '사용해보니', '한 달 써', '쓰고 있는데'];
+const FAKE_EXPERIENCE = ['내돈내산', '써 봤', '써봤', '써 보니', '써보니', '제가 쓰는', '내가 쓰는', '직접 써', '사용해 보니', '사용해보니', '한 달 써', '쓰고 있는데', '샀다가', '사 봤', '사봤', '구매해 보니'];
 
 export function findFakeExperience(text) {
   const t = String(text ?? '');
@@ -54,9 +54,11 @@ export function threadsLength(text) {
   return n;
 }
 
-export function reviewPost(text, { limit = 500 } = {}) {
+// monetized: 링크 글은 첫 줄에 대가성 문구 필수. 링크 없는 글에는 URL 이 들어가면 안 된다.
+export function reviewPost(text, { limit = 500, monetized = true } = {}) {
   const issues = [];
-  if (!String(text).startsWith(DISCLOSURE)) issues.push('첫 줄에 대가성 문구 없음');
+  if (monetized && !String(text).startsWith(DISCLOSURE)) issues.push('첫 줄에 대가성 문구 없음');
+  if (!monetized && /https?:\/\/|www\./.test(text)) issues.push('링크 없는 글에 주소가 들어 있음');
   for (const w of findRiskyPhrases(text)) issues.push(`근거 확인 필요한 표현: "${w}"`);
   for (const w of findFakeExperience(text)) issues.push(`써 본 척하는 표현: "${w}"`);
   const len = threadsLength(text);

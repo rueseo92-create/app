@@ -26,7 +26,7 @@ export function authorizeUrl({ appId, redirectUri }) {
   const q = new URLSearchParams({
     client_id: appId,
     redirect_uri: redirectUri,
-    scope: 'threads_basic,threads_content_publish,threads_manage_replies',
+    scope: 'threads_basic,threads_content_publish,threads_manage_replies,threads_manage_insights',
     response_type: 'code',
   });
   return `https://threads.com/oauth/authorize?${q}`;
@@ -104,7 +104,7 @@ async function createAndPublish({ userId, accessToken }, params, { interval } = 
   return post.id;
 }
 
-// 본문(+상품 사진)을 올리고, 첫 댓글에 링크를 단다.
+// 본문(+상품 사진)을 올리고, 링크가 있으면 첫 댓글에 단다.
 // 사진 처리가 실패하면 글만 올린다.
 export async function postWithLinkReply(token, { text, imageUrl, replyText, link }, { interval = 6000 } = {}) {
   const wait = { interval };
@@ -118,14 +118,22 @@ export async function postWithLinkReply(token, { text, imageUrl, replyText, link
   }
   postId ??= await createAndPublish(token, { media_type: 'TEXT', text }, wait);
 
-  const replyId = await createAndPublish(token, {
-    media_type: 'TEXT',
-    text: replyText,
-    link_attachment: link,
-    reply_to_id: postId,
-  }, wait);
+  const replyId = replyText
+    ? await createAndPublish(token, { media_type: 'TEXT', text: replyText, link_attachment: link, reply_to_id: postId }, wait)
+    : null;
 
   const q = new URLSearchParams({ fields: 'permalink', access_token: token.accessToken });
   const { permalink } = await request('GET', `${API}/${postId}?${q}`).catch(() => ({}));
   return { postId, replyId, permalink: permalink ?? null };
+}
+
+// 게시물 성과 (threads_manage_insights 권한 필요)
+const METRICS = ['views', 'likes', 'replies', 'reposts', 'quotes'];
+
+export async function fetchInsights(token, postId) {
+  const q = new URLSearchParams({ metric: METRICS.join(','), access_token: token.accessToken });
+  const res = await request('GET', `${API}/${postId}/insights?${q}`);
+  const stats = {};
+  for (const m of res.data ?? []) stats[m.name] = m.values?.[0]?.value ?? m.total_value?.value ?? 0;
+  return stats;
 }

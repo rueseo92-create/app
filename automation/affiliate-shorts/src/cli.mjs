@@ -9,7 +9,8 @@
 //   week                             쌓인 영상의 주간 예약 체크리스트 만들기
 //   done <번호...>                   예약 끝난 영상 표시
 //   threads-login                    Threads 계정 연결 (처음 한 번)
-//   threads                          스레드 글 하나 자동 작성·게시 (+첫 댓글 링크)
+//   threads                          스레드 글 하나 자동 작성·게시 (팁·질문·수익화 글 섞어서)
+//   threads-stats                    스레드 성과 요약 (글 종류·첫 줄 유형별 조회수)
 import fs from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
@@ -21,7 +22,10 @@ import { render } from './render.mjs';
 import { buildLanding } from './landing.mjs';
 import { runAuto, readKeywords } from './auto.mjs';
 import { buildWeek } from './week.mjs';
-import { authorizeUrl, extractCode, login, freshToken, postWithLinkReply } from './threads.mjs';
+import { authorizeUrl, extractCode, login, freshToken, postWithLinkReply, fetchInsights } from './threads.mjs';
+import { updateStats as refreshStats, statsReport } from './threadsStats.mjs';
+
+const updateStats = (token, history, opts) => refreshStats(history, id => fetchInsights(token, id), opts);
 import { runThreads } from './threadsPost.mjs';
 import { createInterface } from 'node:readline/promises';
 
@@ -200,22 +204,37 @@ const commands = {
   async threads() {
     const historyFile = path.resolve('state/threads.json');
     const history = fs.existsSync(historyFile) ? JSON.parse(fs.readFileSync(historyFile, 'utf8')) : [];
+    const save = () => {
+      fs.mkdirSync(path.dirname(historyFile), { recursive: true });
+      fs.writeFileSync(historyFile, JSON.stringify(history, null, 2) + '\n');
+    };
     const dryRun = opt['dry-run'];
     const token = dryRun ? null : await freshToken();
+    // 반응 좋은 첫 줄을 다음 글에 참고시키려고 최근 글 성과를 먼저 갱신한다. 실패해도 게시는 계속한다.
+    if (token && (await updateStats(token, history))) save();
     const entry = await runThreads({
       search,
       keywords: readKeywords(path.resolve('keywords.txt')),
       history,
       dryRun,
       maxPerDay: Number(process.env.THREADS_MAX_PER_DAY || 3),
+      linkAfterDays: Number(process.env.THREADS_LINK_AFTER_DAYS || 7),
       persona: process.env.PERSONA,
       post: draft => postWithLinkReply(token, draft),
     });
     if (entry && !dryRun) {
       history.push(entry);
-      fs.mkdirSync(path.dirname(historyFile), { recursive: true });
+      save();
+    }
+  },
+
+  async 'threads-stats'() {
+    const historyFile = path.resolve('state/threads.json');
+    const history = fs.existsSync(historyFile) ? JSON.parse(fs.readFileSync(historyFile, 'utf8')) : [];
+    if (await updateStats(await freshToken(), history, { maxAgeDays: 30 })) {
       fs.writeFileSync(historyFile, JSON.stringify(history, null, 2) + '\n');
     }
+    console.log(statsReport(history));
   },
 
   async list() {
@@ -261,7 +280,7 @@ function shotlistText(product, plan, issues) {
 
 const run = commands[cmd];
 if (!run) {
-  console.log(fs.readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1, 12).join('\n').replace(/^\/\/ ?/gm, ''));
+  console.log(fs.readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1, 13).join('\n').replace(/^\/\/ ?/gm, ''));
   process.exit(cmd ? 1 : 0);
 }
 run().catch(err => {
